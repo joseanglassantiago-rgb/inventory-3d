@@ -1,220 +1,281 @@
 const express = require('express');
 const cors = require('cors');
-const initSqlJs = require('sql.js');
 const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const DB_PATH = '/tmp/inventory.db';
-let db = null;
-let dbReady = null;
+// ============================================================
+// JSON FILE STORAGE (works on Vercel serverless)
+// ============================================================
 
-function ensureDb() {
-  if (!dbReady) {
-    dbReady = initSqlJs({
-      locateFile: file => `https://sql.js.org/dist/${file}`
-    }).then(SQL => {
-      if (fs.existsSync(DB_PATH)) {
-        db = new SQL.Database(fs.readFileSync(DB_PATH));
-      } else {
-        db = new SQL.Database();
-      }
-      db.run(`CREATE TABLE IF NOT EXISTS filaments (id INTEGER PRIMARY KEY AUTOINCREMENT, brand TEXT NOT NULL, material TEXT NOT NULL, color TEXT NOT NULL, diameter REAL DEFAULT 1.75, total_weight_g REAL NOT NULL, remaining_weight_g REAL NOT NULL, price REAL NOT NULL, currency TEXT DEFAULT 'PEN', supplier TEXT, purchase_date TEXT, low_stock_threshold_g REAL DEFAULT 100, notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`);
-      db.run(`CREATE TABLE IF NOT EXISTS resins (id INTEGER PRIMARY KEY AUTOINCREMENT, brand TEXT NOT NULL, type TEXT NOT NULL, color TEXT NOT NULL, total_volume_ml REAL NOT NULL, remaining_volume_ml REAL NOT NULL, price REAL NOT NULL, currency TEXT DEFAULT 'PEN', supplier TEXT, purchase_date TEXT, low_stock_threshold_ml REAL DEFAULT 50, notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`);
-      db.run(`CREATE TABLE IF NOT EXISTS paints (id INTEGER PRIMARY KEY AUTOINCREMENT, brand TEXT NOT NULL, type TEXT NOT NULL, color TEXT NOT NULL, total_volume_ml REAL NOT NULL, remaining_volume_ml REAL NOT NULL, price REAL NOT NULL, currency TEXT DEFAULT 'PEN', supplier TEXT, purchase_date TEXT, low_stock_threshold_ml REAL DEFAULT 10, notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))`);
-      db.run(`CREATE TABLE IF NOT EXISTS usage_log (id INTEGER PRIMARY KEY AUTOINCREMENT, material_type TEXT NOT NULL, material_id INTEGER NOT NULL, amount_used REAL NOT NULL, unit TEXT NOT NULL, project_name TEXT, notes TEXT, used_at TEXT DEFAULT (datetime('now')))`);
-      db.run(`CREATE TABLE IF NOT EXISTS purchase_history (id INTEGER PRIMARY KEY AUTOINCREMENT, material_type TEXT NOT NULL, material_id INTEGER NOT NULL, quantity INTEGER DEFAULT 1, unit_price REAL NOT NULL, total_price REAL NOT NULL, currency TEXT DEFAULT 'PEN', supplier TEXT, purchased_at TEXT DEFAULT (datetime('now')), notes TEXT)`);
-      saveDb();
-    });
+const DB_PATH = '/tmp/inventory-data.json';
+
+function loadData() {
+  if (fs.existsSync(DB_PATH)) {
+    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
   }
-  return dbReady;
+  return { filaments: [], resins: [], paints: [], usage_log: [], purchase_history: [], nextId: 1 };
 }
 
-function saveDb() {
-  if (!db) return;
-  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+function saveData(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data), 'utf8');
 }
 
-function queryAll(sql, params = []) {
-  const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
+function now() {
+  return new Date().toISOString();
 }
 
-function queryOne(sql, params = []) {
-  const rows = queryAll(sql, params);
-  return rows[0] || null;
-}
+// ============================================================
+// FILAMENTS CRUD
+// ============================================================
 
-function runSql(sql, params = []) {
-  db.run(sql, params);
-  saveDb();
-  const result = db.exec("SELECT last_insert_rowid() as id");
-  return {
-    lastInsertRowid: result.length ? result[0].values[0][0] : 0,
-    changes: db.getRowsModified()
-  };
-}
-
-// Middleware: ensure DB is ready before handling any request
-app.use(async (req, res, next) => {
-  try {
-    await ensureDb();
-    next();
-  } catch (err) {
-    console.error('DB init error:', err);
-    res.status(500).json({ error: 'Database initialization failed', details: err.message });
-  }
+app.get('/api/filaments', (req, res) => {
+  const data = loadData();
+  res.json(data.filaments.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
 });
 
-// FILAMENTS
-app.get('/api/filaments', (req, res) => res.json(queryAll('SELECT * FROM filaments ORDER BY updated_at DESC')));
 app.get('/api/filaments/:id', (req, res) => {
-  const row = queryOne('SELECT * FROM filaments WHERE id = ?', [Number(req.params.id)]);
-  if (!row) return res.status(404).json({ error: 'Filamento no encontrado' });
-  res.json(row);
+  const data = loadData();
+  const item = data.filaments.find(f => f.id === Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Filamento no encontrado' });
+  res.json(item);
 });
+
 app.post('/api/filaments', (req, res) => {
+  const data = loadData();
   const { brand, material, color, diameter, total_weight_g, price, currency, supplier, purchase_date, low_stock_threshold_g, notes } = req.body;
-  const result = runSql('INSERT INTO filaments (brand,material,color,diameter,total_weight_g,remaining_weight_g,price,currency,supplier,purchase_date,low_stock_threshold_g,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-    [brand, material, color, diameter||1.75, total_weight_g, total_weight_g, price, currency||'PEN', supplier||null, purchase_date||null, low_stock_threshold_g||100, notes||null]);
-  runSql('INSERT INTO purchase_history (material_type,material_id,unit_price,total_price,currency,supplier,purchased_at) VALUES (?,?,?,?,?,?,?)',
-    ['filament', result.lastInsertRowid, price, price, currency||'PEN', supplier||null, purchase_date||new Date().toISOString()]);
-  res.status(201).json({ id: result.lastInsertRowid, message: 'Filamento creado' });
+  const id = data.nextId++;
+  const item = {
+    id, brand, material, color, diameter: diameter || 1.75, total_weight_g, remaining_weight_g: total_weight_g,
+    price, currency: currency || 'PEN', supplier: supplier || null, purchase_date: purchase_date || null,
+    low_stock_threshold_g: low_stock_threshold_g || 100, notes: notes || null, created_at: now(), updated_at: now()
+  };
+  data.filaments.push(item);
+  data.purchase_history.push({
+    id: data.nextId++, material_type: 'filament', material_id: id, quantity: 1,
+    unit_price: price, total_price: price, currency: currency || 'PEN',
+    supplier: supplier || null, purchased_at: purchase_date || now(), notes: null
+  });
+  saveData(data);
+  res.status(201).json({ id, message: 'Filamento creado' });
 });
+
 app.put('/api/filaments/:id', (req, res) => {
+  const data = loadData();
+  const idx = data.filaments.findIndex(f => f.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
   const { brand, material, color, diameter, total_weight_g, remaining_weight_g, price, currency, supplier, purchase_date, low_stock_threshold_g, notes } = req.body;
-  const result = runSql("UPDATE filaments SET brand=?,material=?,color=?,diameter=?,total_weight_g=?,remaining_weight_g=?,price=?,currency=?,supplier=?,purchase_date=?,low_stock_threshold_g=?,notes=?,updated_at=datetime('now') WHERE id=?",
-    [brand, material, color, diameter, total_weight_g, remaining_weight_g, price, currency, supplier, purchase_date, low_stock_threshold_g, notes, Number(req.params.id)]);
-  if (result.changes===0) return res.status(404).json({ error: 'No encontrado' });
+  Object.assign(data.filaments[idx], { brand, material, color, diameter, total_weight_g, remaining_weight_g, price, currency, supplier, purchase_date, low_stock_threshold_g, notes, updated_at: now() });
+  saveData(data);
   res.json({ message: 'Actualizado' });
 });
+
 app.delete('/api/filaments/:id', (req, res) => {
-  const result = runSql('DELETE FROM filaments WHERE id=?', [Number(req.params.id)]);
-  if (result.changes===0) return res.status(404).json({ error: 'No encontrado' });
+  const data = loadData();
+  const idx = data.filaments.findIndex(f => f.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+  data.filaments.splice(idx, 1);
+  saveData(data);
   res.json({ message: 'Eliminado' });
 });
 
-// RESINS
-app.get('/api/resins', (req, res) => res.json(queryAll('SELECT * FROM resins ORDER BY updated_at DESC')));
+// ============================================================
+// RESINS CRUD
+// ============================================================
+
+app.get('/api/resins', (req, res) => {
+  const data = loadData();
+  res.json(data.resins.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+});
+
 app.get('/api/resins/:id', (req, res) => {
-  const row = queryOne('SELECT * FROM resins WHERE id = ?', [Number(req.params.id)]);
-  if (!row) return res.status(404).json({ error: 'No encontrada' });
-  res.json(row);
+  const data = loadData();
+  const item = data.resins.find(r => r.id === Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Resina no encontrada' });
+  res.json(item);
 });
+
 app.post('/api/resins', (req, res) => {
+  const data = loadData();
   const { brand, type, color, total_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes } = req.body;
-  const result = runSql('INSERT INTO resins (brand,type,color,total_volume_ml,remaining_volume_ml,price,currency,supplier,purchase_date,low_stock_threshold_ml,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-    [brand, type, color, total_volume_ml, total_volume_ml, price, currency||'PEN', supplier||null, purchase_date||null, low_stock_threshold_ml||50, notes||null]);
-  runSql('INSERT INTO purchase_history (material_type,material_id,unit_price,total_price,currency,supplier,purchased_at) VALUES (?,?,?,?,?,?,?)',
-    ['resin', result.lastInsertRowid, price, price, currency||'PEN', supplier||null, purchase_date||new Date().toISOString()]);
-  res.status(201).json({ id: result.lastInsertRowid, message: 'Resina creada' });
+  const id = data.nextId++;
+  const item = {
+    id, brand, type, color, total_volume_ml, remaining_volume_ml: total_volume_ml,
+    price, currency: currency || 'PEN', supplier: supplier || null, purchase_date: purchase_date || null,
+    low_stock_threshold_ml: low_stock_threshold_ml || 50, notes: notes || null, created_at: now(), updated_at: now()
+  };
+  data.resins.push(item);
+  data.purchase_history.push({
+    id: data.nextId++, material_type: 'resin', material_id: id, quantity: 1,
+    unit_price: price, total_price: price, currency: currency || 'PEN',
+    supplier: supplier || null, purchased_at: purchase_date || now(), notes: null
+  });
+  saveData(data);
+  res.status(201).json({ id, message: 'Resina creada' });
 });
+
 app.put('/api/resins/:id', (req, res) => {
+  const data = loadData();
+  const idx = data.resins.findIndex(r => r.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrada' });
   const { brand, type, color, total_volume_ml, remaining_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes } = req.body;
-  const result = runSql("UPDATE resins SET brand=?,type=?,color=?,total_volume_ml=?,remaining_volume_ml=?,price=?,currency=?,supplier=?,purchase_date=?,low_stock_threshold_ml=?,notes=?,updated_at=datetime('now') WHERE id=?",
-    [brand, type, color, total_volume_ml, remaining_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes, Number(req.params.id)]);
-  if (result.changes===0) return res.status(404).json({ error: 'No encontrada' });
+  Object.assign(data.resins[idx], { brand, type, color, total_volume_ml, remaining_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes, updated_at: now() });
+  saveData(data);
   res.json({ message: 'Actualizada' });
 });
+
 app.delete('/api/resins/:id', (req, res) => {
-  const result = runSql('DELETE FROM resins WHERE id=?', [Number(req.params.id)]);
-  if (result.changes===0) return res.status(404).json({ error: 'No encontrada' });
+  const data = loadData();
+  const idx = data.resins.findIndex(r => r.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrada' });
+  data.resins.splice(idx, 1);
+  saveData(data);
   res.json({ message: 'Eliminada' });
 });
 
-// PAINTS
-app.get('/api/paints', (req, res) => res.json(queryAll('SELECT * FROM paints ORDER BY updated_at DESC')));
+// ============================================================
+// PAINTS CRUD
+// ============================================================
+
+app.get('/api/paints', (req, res) => {
+  const data = loadData();
+  res.json(data.paints.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+});
+
 app.get('/api/paints/:id', (req, res) => {
-  const row = queryOne('SELECT * FROM paints WHERE id = ?', [Number(req.params.id)]);
-  if (!row) return res.status(404).json({ error: 'No encontrada' });
-  res.json(row);
+  const data = loadData();
+  const item = data.paints.find(p => p.id === Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Pintura no encontrada' });
+  res.json(item);
 });
+
 app.post('/api/paints', (req, res) => {
+  const data = loadData();
   const { brand, type, color, total_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes } = req.body;
-  const result = runSql('INSERT INTO paints (brand,type,color,total_volume_ml,remaining_volume_ml,price,currency,supplier,purchase_date,low_stock_threshold_ml,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-    [brand, type, color, total_volume_ml, total_volume_ml, price, currency||'PEN', supplier||null, purchase_date||null, low_stock_threshold_ml||10, notes||null]);
-  runSql('INSERT INTO purchase_history (material_type,material_id,unit_price,total_price,currency,supplier,purchased_at) VALUES (?,?,?,?,?,?,?)',
-    ['paint', result.lastInsertRowid, price, price, currency||'PEN', supplier||null, purchase_date||new Date().toISOString()]);
-  res.status(201).json({ id: result.lastInsertRowid, message: 'Pintura creada' });
+  const id = data.nextId++;
+  const item = {
+    id, brand, type, color, total_volume_ml, remaining_volume_ml: total_volume_ml,
+    price, currency: currency || 'PEN', supplier: supplier || null, purchase_date: purchase_date || null,
+    low_stock_threshold_ml: low_stock_threshold_ml || 10, notes: notes || null, created_at: now(), updated_at: now()
+  };
+  data.paints.push(item);
+  data.purchase_history.push({
+    id: data.nextId++, material_type: 'paint', material_id: id, quantity: 1,
+    unit_price: price, total_price: price, currency: currency || 'PEN',
+    supplier: supplier || null, purchased_at: purchase_date || now(), notes: null
+  });
+  saveData(data);
+  res.status(201).json({ id, message: 'Pintura creada' });
 });
+
 app.put('/api/paints/:id', (req, res) => {
+  const data = loadData();
+  const idx = data.paints.findIndex(p => p.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrada' });
   const { brand, type, color, total_volume_ml, remaining_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes } = req.body;
-  const result = runSql("UPDATE paints SET brand=?,type=?,color=?,total_volume_ml=?,remaining_volume_ml=?,price=?,currency=?,supplier=?,purchase_date=?,low_stock_threshold_ml=?,notes=?,updated_at=datetime('now') WHERE id=?",
-    [brand, type, color, total_volume_ml, remaining_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes, Number(req.params.id)]);
-  if (result.changes===0) return res.status(404).json({ error: 'No encontrada' });
+  Object.assign(data.paints[idx], { brand, type, color, total_volume_ml, remaining_volume_ml, price, currency, supplier, purchase_date, low_stock_threshold_ml, notes, updated_at: now() });
+  saveData(data);
   res.json({ message: 'Actualizada' });
 });
+
 app.delete('/api/paints/:id', (req, res) => {
-  const result = runSql('DELETE FROM paints WHERE id=?', [Number(req.params.id)]);
-  if (result.changes===0) return res.status(404).json({ error: 'No encontrada' });
+  const data = loadData();
+  const idx = data.paints.findIndex(p => p.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrada' });
+  data.paints.splice(idx, 1);
+  saveData(data);
   res.json({ message: 'Eliminada' });
 });
 
-// USAGE
+// ============================================================
+// USAGE LOG
+// ============================================================
+
 app.get('/api/usage', (req, res) => {
-  const { material_type, material_id } = req.query;
-  let query = 'SELECT * FROM usage_log';
-  const params = [];
-  const conditions = [];
-  if (material_type) { conditions.push('material_type = ?'); params.push(material_type); }
-  if (material_id) { conditions.push('material_id = ?'); params.push(Number(material_id)); }
-  if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-  query += ' ORDER BY used_at DESC';
-  res.json(queryAll(query, params));
+  const data = loadData();
+  let logs = data.usage_log;
+  if (req.query.material_type) logs = logs.filter(u => u.material_type === req.query.material_type);
+  if (req.query.material_id) logs = logs.filter(u => u.material_id === Number(req.query.material_id));
+  res.json(logs.sort((a, b) => new Date(b.used_at) - new Date(a.used_at)));
 });
+
 app.post('/api/usage', (req, res) => {
+  const data = loadData();
   const { material_type, material_id, amount_used, project_name, notes } = req.body;
   const unit = material_type === 'filament' ? 'g' : 'ml';
+
   if (material_type === 'filament') {
-    const f = queryOne('SELECT remaining_weight_g FROM filaments WHERE id=?', [Number(material_id)]);
-    if (!f) return res.status(404).json({ error: 'Filamento no encontrado' });
-    if (f.remaining_weight_g - amount_used < 0) return res.status(400).json({ error: 'No hay suficiente material' });
-    runSql("UPDATE filaments SET remaining_weight_g=?, updated_at=datetime('now') WHERE id=?", [f.remaining_weight_g - amount_used, Number(material_id)]);
+    const item = data.filaments.find(f => f.id === Number(material_id));
+    if (!item) return res.status(404).json({ error: 'Filamento no encontrado' });
+    if (item.remaining_weight_g - amount_used < 0) return res.status(400).json({ error: 'No hay suficiente material' });
+    item.remaining_weight_g -= amount_used;
+    item.updated_at = now();
   } else if (material_type === 'resin') {
-    const r = queryOne('SELECT remaining_volume_ml FROM resins WHERE id=?', [Number(material_id)]);
-    if (!r) return res.status(404).json({ error: 'Resina no encontrada' });
-    if (r.remaining_volume_ml - amount_used < 0) return res.status(400).json({ error: 'No hay suficiente material' });
-    runSql("UPDATE resins SET remaining_volume_ml=?, updated_at=datetime('now') WHERE id=?", [r.remaining_volume_ml - amount_used, Number(material_id)]);
+    const item = data.resins.find(r => r.id === Number(material_id));
+    if (!item) return res.status(404).json({ error: 'Resina no encontrada' });
+    if (item.remaining_volume_ml - amount_used < 0) return res.status(400).json({ error: 'No hay suficiente material' });
+    item.remaining_volume_ml -= amount_used;
+    item.updated_at = now();
   } else if (material_type === 'paint') {
-    const p = queryOne('SELECT remaining_volume_ml FROM paints WHERE id=?', [Number(material_id)]);
-    if (!p) return res.status(404).json({ error: 'Pintura no encontrada' });
-    if (p.remaining_volume_ml - amount_used < 0) return res.status(400).json({ error: 'No hay suficiente material' });
-    runSql("UPDATE paints SET remaining_volume_ml=?, updated_at=datetime('now') WHERE id=?", [p.remaining_volume_ml - amount_used, Number(material_id)]);
+    const item = data.paints.find(p => p.id === Number(material_id));
+    if (!item) return res.status(404).json({ error: 'Pintura no encontrada' });
+    if (item.remaining_volume_ml - amount_used < 0) return res.status(400).json({ error: 'No hay suficiente material' });
+    item.remaining_volume_ml -= amount_used;
+    item.updated_at = now();
   }
-  const result = runSql('INSERT INTO usage_log (material_type,material_id,amount_used,unit,project_name,notes) VALUES (?,?,?,?,?,?)',
-    [material_type, Number(material_id), amount_used, unit, project_name||null, notes||null]);
-  res.status(201).json({ id: result.lastInsertRowid, message: 'Uso registrado' });
+
+  const id = data.nextId++;
+  data.usage_log.push({ id, material_type, material_id: Number(material_id), amount_used, unit, project_name: project_name || null, notes: notes || null, used_at: now() });
+  saveData(data);
+  res.status(201).json({ id, message: 'Uso registrado' });
 });
 
+// ============================================================
 // ALERTS
+// ============================================================
+
 app.get('/api/alerts', (req, res) => {
-  const lowF = queryAll("SELECT id,brand,material,color,remaining_weight_g as remaining,low_stock_threshold_g as threshold,'filament' as type FROM filaments WHERE remaining_weight_g<=low_stock_threshold_g");
-  const lowR = queryAll("SELECT id,brand,type as material,color,remaining_volume_ml as remaining,low_stock_threshold_ml as threshold,'resin' as type FROM resins WHERE remaining_volume_ml<=low_stock_threshold_ml");
-  const lowP = queryAll("SELECT id,brand,type as material,color,remaining_volume_ml as remaining,low_stock_threshold_ml as threshold,'paint' as type FROM paints WHERE remaining_volume_ml<=low_stock_threshold_ml");
+  const data = loadData();
+  const lowF = data.filaments.filter(f => f.remaining_weight_g <= f.low_stock_threshold_g).map(f => ({ id: f.id, brand: f.brand, material: f.material, color: f.color, remaining: f.remaining_weight_g, threshold: f.low_stock_threshold_g, type: 'filament' }));
+  const lowR = data.resins.filter(r => r.remaining_volume_ml <= r.low_stock_threshold_ml).map(r => ({ id: r.id, brand: r.brand, material: r.type, color: r.color, remaining: r.remaining_volume_ml, threshold: r.low_stock_threshold_ml, type: 'resin' }));
+  const lowP = data.paints.filter(p => p.remaining_volume_ml <= p.low_stock_threshold_ml).map(p => ({ id: p.id, brand: p.brand, material: p.type, color: p.color, remaining: p.remaining_volume_ml, threshold: p.low_stock_threshold_ml, type: 'paint' }));
   const all = [...lowF, ...lowR, ...lowP];
   res.json({ low_stock: all, count: all.length });
 });
 
+// ============================================================
 // PURCHASES
-app.get('/api/purchases', (req, res) => res.json(queryAll('SELECT * FROM purchase_history ORDER BY purchased_at DESC')));
+// ============================================================
 
+app.get('/api/purchases', (req, res) => {
+  const data = loadData();
+  res.json(data.purchase_history.sort((a, b) => new Date(b.purchased_at) - new Date(a.purchased_at)));
+});
+
+// ============================================================
 // STATS
+// ============================================================
+
 app.get('/api/stats', (req, res) => {
-  const totalFilaments = queryOne('SELECT COUNT(*) as count FROM filaments').count;
-  const totalResins = queryOne('SELECT COUNT(*) as count FROM resins').count;
-  const totalPaints = queryOne('SELECT COUNT(*) as count FROM paints').count;
-  const totalFV = queryOne('SELECT COALESCE(SUM(price),0) as total FROM filaments').total;
-  const totalRV = queryOne('SELECT COALESCE(SUM(price),0) as total FROM resins').total;
-  const totalPV = queryOne('SELECT COALESCE(SUM(price),0) as total FROM paints').total;
-  const lowCount = queryOne('SELECT (SELECT COUNT(*) FROM filaments WHERE remaining_weight_g<=low_stock_threshold_g)+(SELECT COUNT(*) FROM resins WHERE remaining_volume_ml<=low_stock_threshold_ml)+(SELECT COUNT(*) FROM paints WHERE remaining_volume_ml<=low_stock_threshold_ml) as count').count;
-  const recentUsage = queryAll('SELECT * FROM usage_log ORDER BY used_at DESC LIMIT 10');
-  res.json({ total_filaments: totalFilaments, total_resins: totalResins, total_paints: totalPaints, total_inventory_value: totalFV+totalRV+totalPV, low_stock_alerts: lowCount, recent_usage: recentUsage });
+  const data = loadData();
+  const totalFV = data.filaments.reduce((s, f) => s + (f.price || 0), 0);
+  const totalRV = data.resins.reduce((s, r) => s + (r.price || 0), 0);
+  const totalPV = data.paints.reduce((s, p) => s + (p.price || 0), 0);
+  const lowF = data.filaments.filter(f => f.remaining_weight_g <= f.low_stock_threshold_g).length;
+  const lowR = data.resins.filter(r => r.remaining_volume_ml <= r.low_stock_threshold_ml).length;
+  const lowP = data.paints.filter(p => p.remaining_volume_ml <= p.low_stock_threshold_ml).length;
+  const recentUsage = data.usage_log.sort((a, b) => new Date(b.used_at) - new Date(a.used_at)).slice(0, 10);
+
+  res.json({
+    total_filaments: data.filaments.length,
+    total_resins: data.resins.length,
+    total_paints: data.paints.length,
+    total_inventory_value: totalFV + totalRV + totalPV,
+    low_stock_alerts: lowF + lowR + lowP,
+    recent_usage: recentUsage
+  });
 });
 
 module.exports = app;
