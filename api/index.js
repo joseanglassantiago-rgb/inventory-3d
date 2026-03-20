@@ -13,7 +13,9 @@ let dbReady = null;
 
 function ensureDb() {
   if (!dbReady) {
-    dbReady = initSqlJs().then(SQL => {
+    dbReady = initSqlJs({
+      locateFile: file => `https://sql.js.org/dist/${file}`
+    }).then(SQL => {
       if (fs.existsSync(DB_PATH)) {
         db = new SQL.Database(fs.readFileSync(DB_PATH));
       } else {
