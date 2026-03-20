@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KREA LAB - Inventario 3D</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">KL</div>
+      <span>KREA LAB</span>
+    </div>
+
+    <div class="sidebar-section">General</div>
+    <button class="nav-btn active" data-section="dashboard">
+      <span class="nav-icon">&#9632;</span> Dashboard
+    </button>
+    <button class="nav-btn" data-section="filaments">
+      <span class="nav-icon">&#9679;</span> Filamentos
+    </button>
+    <button class="nav-btn" data-section="resins">
+      <span class="nav-icon">&#9674;</span> Resinas
+    </button>
+    <button class="nav-btn" data-section="paints">
+      <span class="nav-icon">&#9688;</span> Pinturas
+    </button>
+
+    <div class="sidebar-section">Registros</div>
+    <button class="nav-btn" data-section="usage">
+      <span class="nav-icon">&#9998;</span> Uso de Material
+    </button>
+    <button class="nav-btn" data-section="purchases">
+      <span class="nav-icon">&#9830;</span> Compras
+    </button>
+
+    <div class="sidebar-footer">
+      <small>KREA LAB v1.0</small>
+    </div>
+  </aside>
+
+  <!-- MOBILE NAV -->
+  <nav class="mobile-nav">
+    <button class="nav-btn active" data-section="dashboard">Dashboard</button>
+    <button class="nav-btn" data-section="filaments">Filamentos</button>
+    <button class="nav-btn" data-section="resins">Resinas</button>
+    <button class="nav-btn" data-section="paints">Pinturas</button>
+    <button class="nav-btn" data-section="usage">Uso</button>
+    <button class="nav-btn" data-section="purchases">Compras</button>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <div class="main">
+
+    <div class="page-header">
+      <h1 id="greeting">Buenos dias</h1>
+      <p>Resumen de tu inventario de materiales de impresion 3D.</p>
+    </div>
+
+    <!-- ALERTS BANNER -->
+    <div id="alerts-banner" class="alerts-banner hidden"></div>
+
+    <!-- ==================== DASHBOARD ==================== -->
+    <section id="section-dashboard" class="section active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-icon">&#9679;</span>
+          <span class="stat-number" id="stat-filaments">0</span>
+          <span class="stat-label">Filamentos</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">&#9674;</span>
+          <span class="stat-number" id="stat-resins">0</span>
+          <span class="stat-label">Resinas</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">&#9688;</span>
+          <span class="stat-number" id="stat-paints">0</span>
+          <span class="stat-label">Pinturas</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">$</span>
+          <span class="stat-number" id="stat-value">S/0</span>
+          <span class="stat-label">Valor Inventario</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-icon">!</span>
+          <span class="stat-number" id="stat-alerts">0</span>
+          <span class="stat-label">Stock Bajo</span>
+        </div>
+      </div>
+
+      <div class="cards-row">
+        <div class="content-card">
+          <h3>Uso Reciente</h3>
+          <div id="recent-usage-list"></div>
+        </div>
+        <div class="content-card">
+          <h3>Inventario Rapido</h3>
+          <div id="quick-inventory" class="inventory-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== FILAMENTS ==================== -->
+    <section id="section-filaments" class="section">
+      <div class="section-header">
+        <h2>Filamentos</h2>
+        <button class="btn-primary" onclick="openModal('filament')">+ Agregar</button>
+      </div>
+      <div class="table-wrapper"><table id="filaments-table">
+        <thead>
+          <tr>
+            <th>Marca</th><th>Material</th><th>Color</th><th>Diametro</th>
+            <th>Stock</th><th>Precio</th><th>Proveedor</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- ==================== RESINS ==================== -->
+    <section id="section-resins" class="section">
+      <div class="section-header">
+        <h2>Resinas</h2>
+        <button class="btn-primary" onclick="openModal('resin')">+ Agregar</button>
+      </div>
+      <div class="table-wrapper"><table id="resins-table">
+        <thead>
+          <tr>
+            <th>Marca</th><th>Tipo</th><th>Color</th>
+            <th>Stock</th><th>Precio</th><th>Proveedor</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- ==================== PAINTS ==================== -->
+    <section id="section-paints" class="section">
+      <div class="section-header">
+        <h2>Pinturas</h2>
+        <button class="btn-primary" onclick="openModal('paint')">+ Agregar</button>
+      </div>
+      <div class="table-wrapper"><table id="paints-table">
+        <thead>
+          <tr>
+            <th>Marca</th><th>Tipo</th><th>Color</th>
+            <th>Stock</th><th>Precio</th><th>Proveedor</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- ==================== USAGE ==================== -->
+    <section id="section-usage" class="section">
+      <div class="section-header">
+        <h2>Registro de Uso</h2>
+        <button class="btn-primary" onclick="openUsageModal()">+ Registrar Uso</button>
+      </div>
+      <div class="table-wrapper"><table id="usage-table">
+        <thead>
+          <tr><th>Fecha</th><th>Tipo</th><th>Material</th><th>Cantidad</th><th>Proyecto</th><th>Notas</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- ==================== PURCHASES ==================== -->
+    <section id="section-purchases" class="section">
+      <div class="section-header">
+        <h2>Historial de Compras</h2>
+      </div>
+      <div class="table-wrapper"><table id="purchases-table">
+        <thead>
+          <tr><th>Fecha</th><th>Tipo</th><th>Precio Unit.</th><th>Total</th><th>Proveedor</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+  </div><!-- end .main -->
+
+  <!-- ==================== MODAL: FILAMENT ==================== -->
+  <div id="modal-filament" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="modal-filament-title">Agregar Filamento</h3>
+      <form id="form-filament" onsubmit="saveFilament(event)">
+        <input type="hidden" id="fil-id">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Marca *</label>
+            <input type="text" id="fil-brand" required>
+          </div>
+          <div class="form-group">
+            <label>Material *</label>
+            <select id="fil-material" required>
+              <option value="">Seleccionar...</option>
+              <option value="PLA">PLA</option>
+              <option value="PLA+">PLA+</option>
+              <option value="PETG">PETG</option>
+              <option value="ABS">ABS</option>
+              <option value="TPU">TPU</option>
+              <option value="Nylon">Nylon</option>
+              <option value="ASA">ASA</option>
+              <option value="PC">PC</option>
+              <option value="HIPS">HIPS</option>
+              <option value="PVA">PVA</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Color *</label>
+            <input type="text" id="fil-color" required>
+          </div>
+          <div class="form-group">
+            <label>Diametro (mm)</label>
+            <input type="number" id="fil-diameter" value="1.75" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Peso Total (g) *</label>
+            <input type="number" id="fil-weight" required step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Precio *</label>
+            <input type="number" id="fil-price" required step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Moneda</label>
+            <select id="fil-currency">
+              <option value="PEN">PEN (Soles)</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Proveedor</label>
+            <input type="text" id="fil-supplier">
+          </div>
+          <div class="form-group">
+            <label>Fecha de Compra</label>
+            <input type="date" id="fil-date">
+          </div>
+          <div class="form-group">
+            <label>Alerta Stock Bajo (g)</label>
+            <input type="number" id="fil-threshold" value="100" step="1">
+          </div>
+          <div class="form-group full-width">
+            <label>Notas</label>
+            <textarea id="fil-notes" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('filament')">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: RESIN ==================== -->
+  <div id="modal-resin" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="modal-resin-title">Agregar Resina</h3>
+      <form id="form-resin" onsubmit="saveResin(event)">
+        <input type="hidden" id="res-id">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Marca *</label>
+            <input type="text" id="res-brand" required>
+          </div>
+          <div class="form-group">
+            <label>Tipo *</label>
+            <select id="res-type" required>
+              <option value="">Seleccionar...</option>
+              <option value="Standard">Standard</option>
+              <option value="ABS-Like">ABS-Like</option>
+              <option value="Water Washable">Water Washable</option>
+              <option value="Tough">Tough</option>
+              <option value="Flexible">Flexible</option>
+              <option value="Castable">Castable</option>
+              <option value="Dental">Dental</option>
+              <option value="Clear">Clear</option>
+              <option value="High Detail">High Detail</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Color *</label>
+            <input type="text" id="res-color" required>
+          </div>
+          <div class="form-group">
+            <label>Volumen Total (ml) *</label>
+            <input type="number" id="res-volume" required step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Precio *</label>
+            <input type="number" id="res-price" required step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Moneda</label>
+            <select id="res-currency">
+              <option value="PEN">PEN (Soles)</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Proveedor</label>
+            <input type="text" id="res-supplier">
+          </div>
+          <div class="form-group">
+            <label>Fecha de Compra</label>
+            <input type="date" id="res-date">
+          </div>
+          <div class="form-group">
+            <label>Alerta Stock Bajo (ml)</label>
+            <input type="number" id="res-threshold" value="50" step="1">
+          </div>
+          <div class="form-group full-width">
+            <label>Notas</label>
+            <textarea id="res-notes" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('resin')">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: PAINT ==================== -->
+  <div id="modal-paint" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="modal-paint-title">Agregar Pintura</h3>
+      <form id="form-paint" onsubmit="savePaint(event)">
+        <input type="hidden" id="pnt-id">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Marca *</label>
+            <input type="text" id="pnt-brand" required>
+          </div>
+          <div class="form-group">
+            <label>Tipo *</label>
+            <select id="pnt-type" required>
+              <option value="">Seleccionar...</option>
+              <option value="Acrilica">Acrilica</option>
+              <option value="Esmalte">Esmalte</option>
+              <option value="Spray">Spray</option>
+              <option value="Primer">Primer</option>
+              <option value="Wash">Wash</option>
+              <option value="Metalica">Metalica</option>
+              <option value="Fluorescente">Fluorescente</option>
+              <option value="Barniz">Barniz</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Color *</label>
+            <input type="text" id="pnt-color" required>
+          </div>
+          <div class="form-group">
+            <label>Volumen Total (ml) *</label>
+            <input type="number" id="pnt-volume" required step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Precio *</label>
+            <input type="number" id="pnt-price" required step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Moneda</label>
+            <select id="pnt-currency">
+              <option value="PEN" selected>PEN (Soles)</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Proveedor</label>
+            <input type="text" id="pnt-supplier">
+          </div>
+          <div class="form-group">
+            <label>Fecha de Compra</label>
+            <input type="date" id="pnt-date">
+          </div>
+          <div class="form-group">
+            <label>Alerta Stock Bajo (ml)</label>
+            <input type="number" id="pnt-threshold" value="10" step="1">
+          </div>
+          <div class="form-group full-width">
+            <label>Notas</label>
+            <textarea id="pnt-notes" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('paint')">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: USAGE ==================== -->
+  <div id="modal-usage" class="modal hidden">
+    <div class="modal-content">
+      <h3>Registrar Uso de Material</h3>
+      <form id="form-usage" onsubmit="saveUsage(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Tipo de Material *</label>
+            <select id="use-type" required onchange="loadMaterialOptions()">
+              <option value="">Seleccionar...</option>
+              <option value="filament">Filamento</option>
+              <option value="resin">Resina</option>
+              <option value="paint">Pintura</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Material *</label>
+            <select id="use-material" required>
+              <option value="">Primero selecciona tipo...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Cantidad Usada * <span id="use-unit-label">(g/ml)</span></label>
+            <input type="number" id="use-amount" required step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Nombre del Proyecto</label>
+            <input type="text" id="use-project">
+          </div>
+          <div class="form-group full-width">
+            <label>Notas</label>
+            <textarea id="use-notes" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('usage')">Cancelar</button>
+          <button type="submit" class="btn-primary">Registrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
